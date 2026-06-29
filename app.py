@@ -4,6 +4,7 @@ Run with:  streamlit run app.py
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -85,8 +86,27 @@ def _sidebar(conn) -> str:
     return choice
 
 
+def _maybe_autoseed(conn) -> None:
+    """Seed the sample dataset on first load when the DB is empty.
+
+    Enabled by default so the public/demo deployment shows data immediately
+    (Streamlit Community Cloud starts with an empty, ephemeral filesystem).
+    Set CASHCONTROL_AUTOSEED=0 to disable for a real, start-empty install.
+    """
+    flag = os.environ.get("CASHCONTROL_AUTOSEED", "1").strip().lower()
+    if flag in ("0", "false", "no", "off"):
+        return
+    if is_empty(conn):
+        try:
+            seed.seed(conn)
+        except Exception:
+            # A concurrent first load may have seeded already; ignore.
+            pass
+
+
 def main() -> None:
     conn = common.get_conn()
+    _maybe_autoseed(conn)
     page = _sidebar(conn)
     PAGES[page](conn)
 
