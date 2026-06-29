@@ -1,0 +1,11 @@
+expediente,fecha,monto,categoria,concepto,estado,pagado_por,proveedor
+EXP-2025-101,06/02/2025,"500.000,00",,Impuesto de sellos compraventa,pagado,escribania,ARBA
+EXP-2025-101,07/02/2025,"150.000,00",tasa_registral,Inscripción de dominio,pagado,escribania,RPI
+EXP-2025-101,08/02/2025,"350.000,00",,Honorarios escribano,pagado,escribania,Escribanía
+EXP-2025-102,13/02/2025,"400.000,00",,Sellos de hipoteca,pagado,escribania,ARBA
+EXP-2025-102,14/02/2025,"200.000,00",,Inscripción registral hipoteca,pagado,escribania,RPI
+EXP-2025-103,23/02/2025,"300.000,00",,Sellos sucesión,pagado,escribania,ARBA
+EXP-2025-103,24/02/2025,"120.000,00",,Certificado de dominio e inhibición,pagado,escribania,RPI
+EXP-2025-103,28/02/2025,"400.000,00",honorarios,Honorarios,pendiente,escribania,Escribanía
+EXP-2025-104,04/03/2025,"120.000,00",,Honorarios donación,pagado,escribania,Escribanía
+EXP-2025-104,04/03/2025,"60.000,00",,Sellos donación,pagado,escribania,ARBA

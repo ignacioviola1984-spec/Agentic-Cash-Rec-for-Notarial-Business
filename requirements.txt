@@ -1,0 +1,14 @@
+# Cash Control por Expediente — runtime dependencies.
+# Lower bounds (not exact pins) so pip resolves prebuilt wheels across Python
+# versions, including 3.13/3.14 where older pandas has no wheel.
+streamlit>=1.40
+pandas>=2.2
+openpyxl>=3.1
+python-dateutil>=2.9
+
+# Optional: enables the guarded LLM classification/explanation layer.
+# The system runs fully without it (deterministic rule-based fallback).
+anthropic>=0.40
+
+# Dev / test
+pytest>=8.0

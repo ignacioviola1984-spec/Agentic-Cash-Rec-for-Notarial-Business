@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# App data / secrets
+*.db
+*.sqlite
+*.sqlite3
+.env
+.streamlit/secrets.toml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local working data
+data/*.db
+data/*.sqlite3
+uploads/
+exports/
+
+# Logs
+*.log
+.streamlit_run.log

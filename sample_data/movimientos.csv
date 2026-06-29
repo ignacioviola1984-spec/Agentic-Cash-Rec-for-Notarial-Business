@@ -1,0 +1,10 @@
+fecha,credito,debito,descripcion,contraparte,referencia,expediente
+05/02/2025,"1.200.000,00",,Transferencia recibida Molina,Roberto Molina,TRF-5001,EXP-2025-101
+06/02/2025,,"500.000,00",Pago sellos ARBA,ARBA,SELLOS-101,EXP-2025-101
+07/02/2025,,"150.000,00",Inscripcion dominio RPI,RPI,RPI-101,EXP-2025-101
+12/02/2025,"450.000,00",,Transferencia Vega,Sofia Vega,TRF-5002,EXP-2025-102
+13/02/2025,,"400.000,00",Pago sellos hipoteca,ARBA,SELLOS-102,EXP-2025-102
+22/02/2025,"800.000,00",,Deposito cheque Gutierrez,Hnos Gutierrez,CHQ-118,EXP-2025-103
+03/03/2025,"300.000,00",,Efectivo Ibarra,Pedro Ibarra,REC-77,EXP-2025-104
+06/03/2025,"95.000,00",,Transferencia recibida - Sofia Vega,Sofia Vega,TRF-5100,
+07/03/2025,,"3.500,00",Comision mantenimiento de cuenta,Banco,COM-09,

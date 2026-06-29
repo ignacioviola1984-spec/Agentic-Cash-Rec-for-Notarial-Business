@@ -1,0 +1,5 @@
+expediente,fecha,monto,metodo,referencia
+EXP-2025-101,05/02/2025,"$ 1.200.000,00",transferencia,TRF-5001
+EXP-2025-102,12/02/2025,"450.000,00",transferencia,TRF-5002
+EXP-2025-103,22/02/2025,"800.000,00",cheque,CHQ-118
+EXP-2025-104,03/03/2025,"300.000,00",efectivo,REC-77
