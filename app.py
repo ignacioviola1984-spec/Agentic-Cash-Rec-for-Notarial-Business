@@ -125,6 +125,11 @@ def _maybe_autoseed(conn) -> None:
 
 def main() -> None:
     conn = common.get_conn()
+    # Idempotent schema sync on every run (not only when the cached connection is
+    # first created). This self-heals schema drift after a code update on a warm
+    # Streamlit process, where get_conn() returns a connection built by older code
+    # and new CREATE TABLE IF NOT EXISTS statements would otherwise never run.
+    db.init_db(conn)
     _maybe_autoseed(conn)
     page = _sidebar(conn)
     PAGES[page](conn)
