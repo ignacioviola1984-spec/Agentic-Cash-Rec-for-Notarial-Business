@@ -197,11 +197,11 @@ El agente usa la API de Anthropic. Configurá la clave:
 Sin clave, la capa de agentes funciona en **modo determinista** (reglas), por lo
 que el sistema sigue operativo.
 
-> **Nota de producción (persistencia).** Streamlit Community Cloud tiene un
-> sistema de archivos **efímero**: la base SQLite no persiste entre reinicios/
-> hibernaciones. Para uso real con datos del cliente, conviene migrar a una base
-> persistente (p. ej. Postgres/Supabase/Turso) y desactivar el auto-seed con
-> `CASHCONTROL_AUTOSEED=0`.
+### Backend de datos
+
+SQLite local por defecto. Configurable a **libSQL/Turso** definiendo
+`TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` (mismo esquema y repositorios). Para un
+arranque sin datos de ejemplo, `CASHCONTROL_AUTOSEED=0`.
 
 ## Alcance
 

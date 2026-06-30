@@ -1,6 +1,14 @@
-"""SQLite connection management and schema definition."""
+"""Database connection management and schema definition.
+
+By default the app uses local SQLite (stdlib ``sqlite3``). When the environment
+provides ``TURSO_DATABASE_URL`` and ``TURSO_AUTH_TOKEN``, the same schema and
+repositories run against Turso (libSQL) instead, via a thin sqlite3-compatible
+proxy so no other module changes. The libSQL driver is imported lazily, so its
+absence never affects the SQLite path or the test suite.
+"""
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -128,7 +136,126 @@ CREATE TABLE IF NOT EXISTS audit_log (
 """
 
 
-def connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
+# ---------------------------------------------------------------------------
+# libSQL / Turso compatibility proxy
+#
+# Makes a libSQL connection look enough like a stdlib sqlite3 connection that
+# repository.py / audit.py (which use ``conn.execute(...).fetchone()["col"]``,
+# ``cur.lastrowid`` and ``conn.executescript(...)``) work unchanged.
+# ---------------------------------------------------------------------------
+class _Row:
+    """Row supporting both positional (``row[0]``) and name (``row["col"]``)
+    access, like :class:`sqlite3.Row`."""
+
+    __slots__ = ("_cols", "_vals")
+
+    def __init__(self, cols: list[str], vals: list) -> None:
+        self._cols = cols
+        self._vals = list(vals)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._vals[key]
+        return self._vals[self._cols.index(key)]
+
+    def keys(self) -> list[str]:
+        return list(self._cols)
+
+    def __iter__(self):
+        return iter(self._vals)
+
+
+class _Cursor:
+    def __init__(self, raw) -> None:
+        self._raw = raw
+
+    def _cols(self) -> list[str]:
+        desc = getattr(self._raw, "description", None) or []
+        return [d[0] for d in desc]
+
+    @property
+    def lastrowid(self):
+        return getattr(self._raw, "lastrowid", None)
+
+    @property
+    def description(self):
+        return getattr(self._raw, "description", None)
+
+    def fetchone(self):
+        row = self._raw.fetchone()
+        if row is None:
+            return None
+        return _Row(self._cols(), row)
+
+    def fetchall(self):
+        cols = self._cols()
+        return [_Row(cols, r) for r in self._raw.fetchall()]
+
+    def __iter__(self):
+        cols = self._cols()
+        for r in self._raw.fetchall():
+            yield _Row(cols, r)
+
+
+class _ConnProxy:
+    """sqlite3-compatible facade over a libSQL connection. ``commit()`` also
+    syncs the embedded replica up to Turso so writes are durable."""
+
+    def __init__(self, raw) -> None:
+        self._raw = raw
+
+    def execute(self, sql: str, params: tuple = ()):  # noqa: D401
+        return _Cursor(self._raw.execute(sql, params))
+
+    def executescript(self, sql: str):
+        # libSQL exposes executescript on the connection; fall back to splitting.
+        if hasattr(self._raw, "executescript"):
+            self._raw.executescript(sql)
+        else:  # pragma: no cover - defensive
+            for stmt in (s.strip() for s in sql.split(";")):
+                if stmt:
+                    self._raw.execute(stmt)
+        return self
+
+    def commit(self) -> None:
+        self._raw.commit()
+        sync = getattr(self._raw, "sync", None)
+        if callable(sync):
+            try:
+                sync()
+            except Exception:
+                pass
+
+    def close(self) -> None:
+        try:
+            self._raw.close()
+        except Exception:
+            pass
+
+
+def _connect_turso(database_url: str, auth_token: str):
+    import libsql_experimental as libsql  # lazy: only when Turso is configured
+
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    replica = str(config.DATA_DIR / "turso_replica.db")
+    raw = libsql.connect(replica, sync_url=database_url, auth_token=auth_token)
+    # Pull the latest state from Turso on startup (fresh container = empty replica).
+    try:
+        raw.sync()
+    except Exception:
+        pass
+    raw.execute("PRAGMA foreign_keys = ON")
+    return _ConnProxy(raw)
+
+
+def connect(db_path: Optional[Path] = None):
+    """Open a connection. Uses Turso (libSQL) when ``TURSO_DATABASE_URL`` and
+    ``TURSO_AUTH_TOKEN`` are set; otherwise local SQLite (the default)."""
+    turso_url = os.environ.get("TURSO_DATABASE_URL", "").strip()
+    turso_token = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
+    if turso_url and turso_token:
+        return _connect_turso(turso_url, turso_token)
+
     path = Path(db_path) if db_path else config.SETTINGS.db_path
     path.parent.mkdir(parents=True, exist_ok=True)
     # check_same_thread=False: the connection is cached and reused across

@@ -37,7 +37,13 @@ def _bridge_secrets() -> None:
     """Expose Streamlit Cloud secrets as environment variables so the existing
     config/LLM layer (which reads os.environ) picks them up. Secrets are never
     logged or committed; they live only in the Streamlit Cloud secrets store."""
-    for key in ("ANTHROPIC_API_KEY", "CASHCONTROL_LLM_MODEL", "CASHCONTROL_AUTOSEED"):
+    for key in (
+        "ANTHROPIC_API_KEY",
+        "CASHCONTROL_LLM_MODEL",
+        "CASHCONTROL_AUTOSEED",
+        "TURSO_DATABASE_URL",
+        "TURSO_AUTH_TOKEN",
+    ):
         if os.environ.get(key):
             continue
         try:
@@ -108,8 +114,7 @@ def _sidebar(conn) -> str:
 def _maybe_autoseed(conn) -> None:
     """Seed the sample dataset on first load when the DB is empty.
 
-    Enabled by default so the public/demo deployment shows data immediately
-    (Streamlit Community Cloud starts with an empty, ephemeral filesystem).
+    Enabled by default so a demo deployment shows data on first load.
     Set CASHCONTROL_AUTOSEED=0 to disable for a real, start-empty install.
     """
     flag = os.environ.get("CASHCONTROL_AUTOSEED", "1").strip().lower()
