@@ -8,10 +8,16 @@ import streamlit as st
 from ..data import repository as repo
 from ..domain.models import ExpenseStatus, MatchStatus, MatchTargetType, ReviewStatus
 from ..llm.client import get_client
-from ..services import matching_service, review_service, reports, status_service
+from ..services import (
+    analysis_service,
+    matching_service,
+    review_service,
+    reports,
+    status_service,
+)
 from ..services.queries import build_expediente_view
 from ..services.serialization import summary_facts_text
-from .common import money, status_badge
+from .common import money, render_analysis, status_badge
 
 
 def _selector(conn):
@@ -83,7 +89,10 @@ def render(conn) -> None:
         st.write(text)
         st.caption(f"Origen del texto: {origen} · Los montos provienen del cálculo determinista.")
 
-    tabs = st.tabs(["Anticipos", "Gastos", "Movimientos", "Conciliación", "Revisiones", "Exportar"])
+    tabs = st.tabs([
+        "Anticipos", "Gastos", "Movimientos", "Conciliación", "Revisiones",
+        "🤖 Análisis IA", "Exportar",
+    ])
 
     # Anticipos
     with tabs[0]:
@@ -142,14 +151,44 @@ def render(conn) -> None:
     with tabs[4]:
         _render_reviews(conn, view, exp_id)
 
-    # Exportar
+    # Análisis IA (agente)
     with tabs[5]:
+        _render_ai_analysis(conn, exp_id)
+
+    # Exportar
+    with tabs[6]:
         data = reports.export_expediente_excel(conn, exp_id)
         st.download_button(
             "Descargar reporte del expediente (Excel)", data=data,
             file_name=f"{e.codigo}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+
+def _render_ai_analysis(conn, exp_id) -> None:
+    from ..llm.client import get_client
+
+    enabled = get_client().enabled
+    if enabled:
+        st.caption("🤖 Agente IA activo. Interpreta los resultados deterministas y "
+                   "propone acciones; los montos provienen del cálculo, no del modelo.")
+    else:
+        st.caption("⚙️ Sin API configurada: las recomendaciones se generan por reglas "
+                   "deterministas. Cargá ANTHROPIC_API_KEY para activar el agente IA.")
+
+    cached = analysis_service.peek_expediente_analysis(conn, exp_id)
+    cols = st.columns([1.4, 3])
+    label = "Regenerar análisis" if cached else "Generar análisis y recomendaciones"
+    if cols[0].button(label, key=f"ai_gen_{exp_id}", type="primary"):
+        with st.spinner("El agente está analizando el expediente…"):
+            cached = analysis_service.get_or_generate_expediente_analysis(
+                conn, exp_id, force=True, actor="ui")
+        st.rerun()
+    if cached:
+        cols[1].caption("Análisis en caché para el estado financiero actual.")
+        render_analysis(st, cached)
+    else:
+        st.info("Generá el análisis para obtener diagnóstico y recomendaciones accionables.")
 
 
 def _target_label(conn, m) -> str:

@@ -5,8 +5,9 @@ import pandas as pd
 import streamlit as st
 
 from ..domain.models import ExpedienteStatus
+from ..services import analysis_service
 from ..services.queries import build_portfolio
-from .common import money, status_badge
+from .common import money, render_analysis, status_badge
 
 
 def render(conn) -> None:
@@ -34,6 +35,23 @@ def render(conn) -> None:
     s2.metric("🟡 Atención", sc.get(ExpedienteStatus.ATENCION.value, 0))
     s3.metric("🟠 Riesgo", sc.get(ExpedienteStatus.RIESGO.value, 0))
     s4.metric("🔴 Bloqueado", sc.get(ExpedienteStatus.BLOQUEADO.value, 0))
+
+    with st.expander("🤖 Análisis de cartera (IA) — diagnóstico y priorización"):
+        from ..llm.client import get_client
+        if not get_client().enabled:
+            st.caption("⚙️ Sin API configurada: recomendaciones por reglas deterministas. "
+                       "Cargá ANTHROPIC_API_KEY para activar el agente IA.")
+        cached = analysis_service.peek_portfolio_analysis(conn)
+        label = "Regenerar análisis de cartera" if cached else "Generar análisis de cartera"
+        if st.button(label, key="ai_portfolio", type="primary"):
+            with st.spinner("El agente está analizando la cartera…"):
+                cached = analysis_service.get_or_generate_portfolio_analysis(
+                    conn, force=True, actor="ui")
+            st.rerun()
+        if cached:
+            render_analysis(st, cached)
+        else:
+            st.info("Generá el análisis para priorizar qué expedientes atender primero.")
 
     st.subheader("Expedientes")
     st.caption("Ordenados por severidad. Abrí un expediente para ver el detalle financiero.")

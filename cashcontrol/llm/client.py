@@ -11,11 +11,48 @@ be in the allowed set; narratives must pass the number-grounding guard.
 """
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from typing import Optional, Sequence
 
 import config
+
+
+def _resolve_api_key() -> str:
+    """Resolve the Anthropic key from (in order) the environment, the root
+    settings, and Streamlit secrets. This lets the same code pick up the key
+    whether it is set via .env locally or via Streamlit Cloud's secrets UI."""
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if key:
+        return key
+    key = (config.SETTINGS.anthropic_api_key or "").strip()
+    if key:
+        return key
+    try:  # Streamlit secrets are only available inside a Streamlit runtime.
+        import streamlit as st
+
+        val = st.secrets.get("ANTHROPIC_API_KEY", "")  # type: ignore[attr-defined]
+        if val:
+            return str(val).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _resolve_model() -> str:
+    model = os.environ.get("CASHCONTROL_LLM_MODEL", "").strip()
+    if model:
+        return model
+    try:
+        import streamlit as st
+
+        val = st.secrets.get("CASHCONTROL_LLM_MODEL", "")  # type: ignore[attr-defined]
+        if val:
+            return str(val).strip()
+    except Exception:
+        pass
+    return config.SETTINGS.llm_model
 
 # Keyword -> category heuristics (used as fallback AND to validate LLM output).
 _KEYWORDS: list[tuple[tuple[str, ...], str]] = [
@@ -80,14 +117,24 @@ def narrative_grounding_ok(output: str, grounding: str) -> bool:
 
 
 class LLMClient:
+    # Conservative production defaults: bounded latency and a couple of retries
+    # for transient (429/5xx/network) errors handled by the SDK.
+    _TIMEOUT_S = 40.0
+    _MAX_RETRIES = 2
+
     def __init__(self) -> None:
-        self._settings = config.SETTINGS
+        self.api_key = _resolve_api_key()
+        self.model = _resolve_model()
         self._client = None
-        if self._settings.llm_enabled:
+        if self.api_key:
             try:  # pragma: no cover - exercised only with a real key
                 import anthropic
 
-                self._client = anthropic.Anthropic(api_key=self._settings.anthropic_api_key)
+                self._client = anthropic.Anthropic(
+                    api_key=self.api_key,
+                    timeout=self._TIMEOUT_S,
+                    max_retries=self._MAX_RETRIES,
+                )
             except Exception:
                 self._client = None
 
@@ -95,13 +142,23 @@ class LLMClient:
     def enabled(self) -> bool:
         return self._client is not None
 
-    def _complete(self, system: str, user: str, max_tokens: int = 200) -> Optional[str]:
+    def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        max_tokens: int = 512,
+        temperature: float = 0.2,
+    ) -> Optional[str]:
+        """Return the model's text output, or ``None`` on any failure (no key,
+        timeout, API error). Callers must have a deterministic fallback."""
         if self._client is None:
             return None
         try:  # pragma: no cover - requires network/key
             msg = self._client.messages.create(
-                model=self._settings.llm_model,
+                model=self.model,
                 max_tokens=max_tokens,
+                temperature=temperature,
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
@@ -109,6 +166,10 @@ class LLMClient:
             return "".join(parts).strip()
         except Exception:
             return None
+
+    # Backwards-compatible internal alias used by the classify/suggest helpers.
+    def _complete(self, system: str, user: str, max_tokens: int = 200) -> Optional[str]:
+        return self.complete(system, user, max_tokens=max_tokens, temperature=0.0)
 
     # -- public API ------------------------------------------------------
     def classify_expense(self, concepto: str, proveedor: str = "") -> tuple[str, str]:
@@ -159,10 +220,15 @@ class LLMClient:
 
 
 _DEFAULT: Optional[LLMClient] = None
+_DEFAULT_KEY: Optional[str] = None
 
 
 def get_client() -> LLMClient:
-    global _DEFAULT
-    if _DEFAULT is None:
+    """Return a cached client, rebuilding it if the resolved key changed (e.g.
+    a Streamlit secret was added after first load)."""
+    global _DEFAULT, _DEFAULT_KEY
+    key = _resolve_api_key()
+    if _DEFAULT is None or _DEFAULT_KEY != key:
         _DEFAULT = LLMClient()
+        _DEFAULT_KEY = key
     return _DEFAULT

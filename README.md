@@ -161,6 +161,48 @@ Cubre dinero exacto, motor de balances, clasificador de estado, matcher,
 integridad de la cadena de auditoría e ingestión/flujo end-to-end (seed →
 clasificación → conciliación → reporte).
 
+## Agentes de análisis (IA)
+
+Sobre el núcleo determinista hay una capa de **agentes que interpretan los
+resultados y producen análisis + recomendaciones accionables**, a dos niveles:
+
+- **Por expediente** (pestaña *🤖 Análisis IA*): diagnóstico, riesgos y pasos
+  concretos (reponer fondos, conciliar, cobrar saldos, regularizar, devolver
+  excedentes).
+- **De cartera** (tablero): priorización — qué expedientes atender primero.
+
+Garantías de producción:
+
+- **El agente nunca inventa un número.** Un *muro de grounding* verifica que toda
+  cifra del texto generado exista en los hechos deterministas; si aparece una
+  cifra nueva, la salida se rechaza.
+- **Degradación elegante.** Sin API, con la API caída, respuesta malformada o
+  grounding fallido, el agente cae a **recomendaciones deterministas por reglas**.
+  La función nunca rompe la app desplegada.
+- **Control de costo y auditoría.** Cada análisis se cachea por hash de los hechos
+  (no se repite la llamada si los números no cambiaron), se persiste y se registra
+  en el log de auditoría (solo metadatos: scope, origen, modelo, grounded).
+
+### Activación
+
+El agente usa la API de Anthropic. Configurá la clave:
+
+- **Local:** `ANTHROPIC_API_KEY` en `.env` (ver `.env.example`).
+- **Streamlit Community Cloud:** *Manage app → Settings → Secrets* y agregá
+  ```toml
+  ANTHROPIC_API_KEY = "sk-ant-..."
+  CASHCONTROL_LLM_MODEL = "claude-opus-4-8"   # opcional
+  ```
+
+Sin clave, la capa de agentes funciona en **modo determinista** (reglas), por lo
+que el sistema sigue operativo.
+
+> **Nota de producción (persistencia).** Streamlit Community Cloud tiene un
+> sistema de archivos **efímero**: la base SQLite no persiste entre reinicios/
+> hibernaciones. Para uso real con datos del cliente, conviene migrar a una base
+> persistente (p. ej. Postgres/Supabase/Turso) y desactivar el auto-seed con
+> `CASHCONTROL_AUTOSEED=0`.
+
 ## Alcance
 
 El sistema implementa **completamente** el control de caja por expediente. No

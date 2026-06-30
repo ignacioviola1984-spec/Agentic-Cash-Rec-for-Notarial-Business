@@ -100,6 +100,20 @@ CREATE TABLE IF NOT EXISTS expediente_status (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS agent_analyses (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope         TEXT NOT NULL,                 -- 'expediente' | 'cartera'
+    expediente_id INTEGER REFERENCES expedientes(id) ON DELETE CASCADE,
+    facts_hash    TEXT NOT NULL,
+    content_json  TEXT NOT NULL,
+    origen        TEXT NOT NULL DEFAULT 'fallback',
+    model         TEXT NOT NULL DEFAULT '',
+    grounded      INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_agent_lookup
+    ON agent_analyses(scope, expediente_id, facts_hash, id);
+
 CREATE TABLE IF NOT EXISTS audit_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts          TEXT NOT NULL DEFAULT (datetime('now')),
@@ -137,6 +151,7 @@ def reset_db(conn: sqlite3.Connection) -> None:
     """Drop all data (used by tests and the 'reset demo' action)."""
     tables = [
         "audit_log",
+        "agent_analyses",
         "expediente_status",
         "review_items",
         "matches",

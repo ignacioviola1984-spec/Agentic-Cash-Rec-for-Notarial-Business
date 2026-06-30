@@ -56,3 +56,36 @@ def status_badge(status_value: str) -> str:
 
 def metric_money(col, label: str, amount, help_text: str = "") -> None:
     col.metric(label, money(amount), help=help_text or None)
+
+
+_PRIORITY_COLOR = {"alta": "#cf222e", "media": "#bc4c00", "baja": "#1a7f37"}
+
+
+def render_analysis(container, result) -> None:
+    """Render an AnalysisResult (diagnosis, risks, recommendations) with a clear
+    provenance note. Numbers always come from the deterministic engine."""
+    container.markdown(f"**Diagnóstico**  \n{result.diagnostico}")
+    if result.riesgos:
+        container.markdown("**Riesgos**")
+        for r in result.riesgos:
+            container.markdown(f"- {r}")
+    container.markdown("**Recomendaciones**")
+    for rec in result.recomendaciones:
+        color = _PRIORITY_COLOR.get(rec.prioridad, "#57606a")
+        badge = (
+            f"<span style='background:{color};color:white;padding:1px 8px;"
+            f"border-radius:10px;font-size:0.72rem;font-weight:600'>"
+            f"{rec.prioridad.upper()}</span>"
+        )
+        with container.container(border=True):
+            container.markdown(f"{badge}&nbsp; {rec.accion}", unsafe_allow_html=True)
+            if rec.fundamento:
+                container.caption(f"↳ {rec.fundamento}")
+    if result.origen == "llm":
+        origen = f"🤖 Agente IA · modelo {result.model} · confianza {result.confianza}"
+    else:
+        origen = "⚙️ Determinista (reglas) · sin llamada a la API"
+    container.caption(
+        origen + " · Los montos provienen del cálculo determinista; el texto es "
+        "interpretación y no modifica ninguna cifra."
+    )

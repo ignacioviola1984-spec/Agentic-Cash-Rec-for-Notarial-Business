@@ -435,3 +435,43 @@ def get_status_row(conn: sqlite3.Connection, expediente_id: int) -> Optional[sql
 
 def list_status_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM expediente_status").fetchall()
+
+
+# ---------------------------------------------------------------------------
+# Agent analyses (cached interpretation + recommendations)
+# ---------------------------------------------------------------------------
+def get_cached_analysis(
+    conn: sqlite3.Connection, scope: str, expediente_id: Optional[int], facts_hash: str
+) -> Optional[sqlite3.Row]:
+    if expediente_id is None:
+        return conn.execute(
+            "SELECT * FROM agent_analyses WHERE scope = ? AND expediente_id IS NULL "
+            "AND facts_hash = ? ORDER BY id DESC LIMIT 1",
+            (scope, facts_hash),
+        ).fetchone()
+    return conn.execute(
+        "SELECT * FROM agent_analyses WHERE scope = ? AND expediente_id = ? "
+        "AND facts_hash = ? ORDER BY id DESC LIMIT 1",
+        (scope, expediente_id, facts_hash),
+    ).fetchone()
+
+
+def insert_analysis(
+    conn: sqlite3.Connection,
+    *,
+    scope: str,
+    expediente_id: Optional[int],
+    facts_hash: str,
+    content_json: str,
+    origen: str,
+    model: str,
+    grounded: bool,
+) -> int:
+    cur = conn.execute(
+        """INSERT INTO agent_analyses
+               (scope, expediente_id, facts_hash, content_json, origen, model, grounded)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (scope, expediente_id, facts_hash, content_json, origen, model, 1 if grounded else 0),
+    )
+    conn.commit()
+    return int(cur.lastrowid)

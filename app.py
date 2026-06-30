@@ -32,6 +32,24 @@ from cashcontrol.ui import (
 
 st.set_page_config(page_title="Cash Control por Expediente", page_icon="💼", layout="wide")
 
+
+def _bridge_secrets() -> None:
+    """Expose Streamlit Cloud secrets as environment variables so the existing
+    config/LLM layer (which reads os.environ) picks them up. Secrets are never
+    logged or committed; they live only in the Streamlit Cloud secrets store."""
+    for key in ("ANTHROPIC_API_KEY", "CASHCONTROL_LLM_MODEL", "CASHCONTROL_AUTOSEED"):
+        if os.environ.get(key):
+            continue
+        try:
+            val = st.secrets.get(key)  # type: ignore[attr-defined]
+        except Exception:
+            val = None
+        if val:
+            os.environ[key] = str(val)
+
+
+_bridge_secrets()
+
 PAGES = {
     "Tablero": dashboard.render,
     "Expediente": expediente.render,
@@ -76,10 +94,11 @@ def _sidebar(conn) -> str:
                 st.rerun()
 
     st.sidebar.divider()
-    llm_on = config.SETTINGS.llm_enabled
+    from cashcontrol.llm.client import get_client
+    llm_on = get_client().enabled
     st.sidebar.caption(
-        ("🤖 LLM activo (clasificación/sugerencias)." if llm_on
-         else "⚙️ Modo determinista (sin LLM). Reglas para clasificar/sugerir.")
+        ("🤖 Agente IA activo (análisis/recomendaciones/clasificación)." if llm_on
+         else "⚙️ Modo determinista (sin API). Reglas para analizar/clasificar/sugerir.")
         + "\n\nLos montos, balances, estados y reportes son siempre deterministas."
     )
     st.sidebar.caption(f"v{__version__} · moneda {config.SETTINGS.currency}")
