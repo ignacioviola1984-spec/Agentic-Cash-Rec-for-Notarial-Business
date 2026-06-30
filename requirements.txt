@@ -12,7 +12,7 @@ anthropic>=0.40
 
 # Optional: libSQL/Turso backend. Imported lazily only when TURSO_DATABASE_URL
 # and TURSO_AUTH_TOKEN are set; the app defaults to local SQLite without it.
-libsql-experimental>=0.0.49
 
-# Dev / test
-pytest>=8.0
+
+
+
