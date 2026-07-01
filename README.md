@@ -1,3 +1,5 @@
+[![CI](https://github.com/ignacioviola1984-spec/Agentic-Cash-Rec-for-Notarial-Business/actions/workflows/ci.yml/badge.svg)](https://github.com/ignacioviola1984-spec/Agentic-Cash-Rec-for-Notarial-Business/actions/workflows/ci.yml)
+
 # Cash Control por Expediente
 
 Sistema enterprise de **control de caja por expediente** para una escribanía
