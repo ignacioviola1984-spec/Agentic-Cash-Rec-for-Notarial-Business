@@ -107,7 +107,9 @@ def _sidebar(conn) -> str:
          else "⚙️ Modo determinista (sin API). Reglas para analizar/clasificar/sugerir.")
         + "\n\nLos montos, balances, estados y reportes son siempre deterministas."
     )
-    st.sidebar.caption(f"v{__version__} · moneda {config.SETTINGS.currency}")
+    st.sidebar.caption(
+        f"v{__version__} · moneda {config.SETTINGS.currency} · datos: {db.active_backend()}"
+    )
     return choice
 
 

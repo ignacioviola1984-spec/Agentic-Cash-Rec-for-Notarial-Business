@@ -248,6 +248,16 @@ def _connect_turso(database_url: str, auth_token: str):
     return _ConnProxy(raw)
 
 
+def active_backend() -> str:
+    """Human-readable name of the backend that ``connect()`` will use, based on
+    the current environment. Used by the UI to make the active store visible."""
+    if os.environ.get("TURSO_DATABASE_URL", "").strip() and os.environ.get(
+        "TURSO_AUTH_TOKEN", ""
+    ).strip():
+        return "Turso (libSQL)"
+    return "SQLite local"
+
+
 def connect(db_path: Optional[Path] = None):
     """Open a connection. Uses Turso (libSQL) when ``TURSO_DATABASE_URL`` and
     ``TURSO_AUTH_TOKEN`` are set; otherwise local SQLite (the default)."""
