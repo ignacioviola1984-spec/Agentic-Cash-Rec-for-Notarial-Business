@@ -8,8 +8,11 @@ absence never affects the SQLite path or the test suite.
 """
 from __future__ import annotations
 
+import base64
+import json
 import os
 import sqlite3
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -137,15 +140,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 
 # ---------------------------------------------------------------------------
-# libSQL / Turso compatibility proxy
+# Turso (libSQL) over the HTTP API ("Hrana v2 pipeline")
 #
-# Makes a libSQL connection look enough like a stdlib sqlite3 connection that
-# repository.py / audit.py (which use ``conn.execute(...).fetchone()["col"]``,
-# ``cur.lastrowid`` and ``conn.executescript(...)``) work unchanged.
+# We talk to Turso via plain HTTPS (stdlib urllib) instead of a compiled driver,
+# so there is nothing to build on the host — it installs everywhere Python does.
+# The classes below present a minimal sqlite3-compatible surface so repository.py
+# / audit.py (which use ``conn.execute(...).fetchone()["col"]``, ``cur.lastrowid``
+# and ``conn.executescript(...)``) work unchanged. Turso speaks SQLite SQL, so no
+# query changes are needed either. Each statement autocommits; writes are durable
+# on Turso immediately (no local replica to lose).
 # ---------------------------------------------------------------------------
 class _Row:
-    """Row supporting both positional (``row[0]``) and name (``row["col"]``)
-    access, like :class:`sqlite3.Row`."""
+    """Row supporting positional (``row[0]``) and name (``row["col"]``) access,
+    like :class:`sqlite3.Row`."""
 
     __slots__ = ("_cols", "_vals")
 
@@ -165,87 +172,124 @@ class _Row:
         return iter(self._vals)
 
 
-class _Cursor:
-    def __init__(self, raw) -> None:
-        self._raw = raw
+def _py_to_arg(v) -> dict:
+    if v is None:
+        return {"type": "null"}
+    if isinstance(v, bool):
+        return {"type": "integer", "value": str(int(v))}
+    if isinstance(v, int):
+        return {"type": "integer", "value": str(v)}
+    if isinstance(v, float):
+        return {"type": "float", "value": v}
+    if isinstance(v, (bytes, bytearray)):
+        return {"type": "blob", "base64": base64.b64encode(bytes(v)).decode("ascii")}
+    return {"type": "text", "value": str(v)}
 
-    def _cols(self) -> list[str]:
-        desc = getattr(self._raw, "description", None) or []
-        return [d[0] for d in desc]
 
-    @property
-    def lastrowid(self):
-        return getattr(self._raw, "lastrowid", None)
+def _arg_to_py(cell: dict):
+    t = cell.get("type")
+    if t == "null":
+        return None
+    if t == "integer":
+        return int(cell.get("value"))
+    if t == "float":
+        return float(cell.get("value"))
+    if t == "blob":
+        return base64.b64decode(cell.get("base64", ""))
+    return cell.get("value")
 
-    @property
-    def description(self):
-        return getattr(self._raw, "description", None)
+
+class _TursoResult:
+    def __init__(self, result: dict) -> None:
+        self._cols = [c.get("name") for c in (result.get("cols") or [])]
+        self._rows = result.get("rows") or []
+        self._i = 0
+        lir = result.get("last_insert_rowid")
+        self.lastrowid = int(lir) if lir not in (None, "") else None
+        self.description = [(c,) for c in self._cols] if self._cols else None
 
     def fetchone(self):
-        row = self._raw.fetchone()
-        if row is None:
+        if self._i >= len(self._rows):
             return None
-        return _Row(self._cols(), row)
+        row = self._rows[self._i]
+        self._i += 1
+        return _Row(self._cols, [_arg_to_py(c) for c in row])
 
     def fetchall(self):
-        cols = self._cols()
-        return [_Row(cols, r) for r in self._raw.fetchall()]
+        rows = [
+            _Row(self._cols, [_arg_to_py(c) for c in row])
+            for row in self._rows[self._i:]
+        ]
+        self._i = len(self._rows)
+        return rows
 
     def __iter__(self):
-        cols = self._cols()
-        for r in self._raw.fetchall():
-            yield _Row(cols, r)
+        return iter(self.fetchall())
 
 
-class _ConnProxy:
-    """sqlite3-compatible facade over a libSQL connection. ``commit()`` also
-    syncs the embedded replica up to Turso so writes are durable."""
+class _TursoConn:
+    """Minimal sqlite3-compatible connection backed by the Turso HTTP pipeline."""
 
-    def __init__(self, raw) -> None:
-        self._raw = raw
+    def __init__(self, http_base: str, auth_token: str) -> None:
+        self._url = http_base.rstrip("/") + "/v2/pipeline"
+        self._token = auth_token
 
-    def execute(self, sql: str, params: tuple = ()):  # noqa: D401
-        return _Cursor(self._raw.execute(sql, params))
+    def _pipeline(self, requests: list[dict]) -> dict:
+        body = json.dumps({"requests": requests}).encode("utf-8")
+        req = urllib.request.Request(
+            self._url,
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        for r in data.get("results", []):
+            if r.get("type") == "error":
+                raise sqlite3.OperationalError(
+                    "Turso: " + json.dumps(r.get("error", {}), ensure_ascii=False)
+                )
+        return data
+
+    def execute(self, sql: str, params: tuple = ()):
+        args = [_py_to_arg(p) for p in (params or ())]
+        data = self._pipeline(
+            [{"type": "execute", "stmt": {"sql": sql, "args": args}}, {"type": "close"}]
+        )
+        result = data["results"][0]["response"]["result"]
+        return _TursoResult(result)
 
     def executescript(self, sql: str):
-        # libSQL exposes executescript on the connection; fall back to splitting.
-        if hasattr(self._raw, "executescript"):
-            self._raw.executescript(sql)
-        else:  # pragma: no cover - defensive
-            for stmt in (s.strip() for s in sql.split(";")):
-                if stmt:
-                    self._raw.execute(stmt)
+        stmts = [s.strip() for s in sql.split(";") if s.strip()]
+        reqs = [{"type": "execute", "stmt": {"sql": s}} for s in stmts]
+        reqs.append({"type": "close"})
+        self._pipeline(reqs)
         return self
 
     def commit(self) -> None:
-        self._raw.commit()
-        sync = getattr(self._raw, "sync", None)
-        if callable(sync):
-            try:
-                sync()
-            except Exception:
-                pass
+        # Each pipeline autocommits on Turso; nothing to flush.
+        pass
 
     def close(self) -> None:
-        try:
-            self._raw.close()
-        except Exception:
-            pass
+        pass
+
+
+def _turso_http_base(database_url: str) -> str:
+    """Map a libSQL connection URL to its HTTPS endpoint."""
+    url = database_url.strip()
+    for prefix in ("libsql://", "wss://", "ws://", "http://"):
+        if url.startswith(prefix):
+            return "https://" + url[len(prefix):]
+    if url.startswith("https://"):
+        return url
+    return "https://" + url
 
 
 def _connect_turso(database_url: str, auth_token: str):
-    import libsql_experimental as libsql  # lazy: only when Turso is configured
-
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    replica = str(config.DATA_DIR / "turso_replica.db")
-    raw = libsql.connect(replica, sync_url=database_url, auth_token=auth_token)
-    # Pull the latest state from Turso on startup (fresh container = empty replica).
-    try:
-        raw.sync()
-    except Exception:
-        pass
-    raw.execute("PRAGMA foreign_keys = ON")
-    return _ConnProxy(raw)
+    return _TursoConn(_turso_http_base(database_url), auth_token)
 
 
 def active_backend() -> str:

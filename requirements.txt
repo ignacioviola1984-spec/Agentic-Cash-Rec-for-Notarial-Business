@@ -10,8 +10,9 @@ python-dateutil>=2.9
 # The system runs fully without it (deterministic rule-based fallback).
 anthropic>=0.40
 
-# Optional: libSQL/Turso backend. Imported lazily only when TURSO_DATABASE_URL
-# and TURSO_AUTH_TOKEN are set; the app defaults to local SQLite without it.
+# Optional libSQL/Turso backend: enabled by setting TURSO_DATABASE_URL and
+# TURSO_AUTH_TOKEN. It talks to Turso over the HTTP API using only the Python
+# standard library, so it needs NO extra package here. Defaults to local SQLite.
 
 
 
